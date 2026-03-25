@@ -43,7 +43,7 @@ function generateRandomNonce(): string {
 }
 
 export default function Signatures() {
-  const { isConnected } = useAccount();
+  const { isConnected, chain } = useAccount();
   const { data: walletClient } = useWalletClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -100,6 +100,11 @@ export default function Signatures() {
   const [faucetTo, setFaucetTo] = useState('');
   const [faucetAmount, setFaucetAmount] = useState('');
   const [faucetTx, setFaucetTx] = useState<string | null>(null);
+
+  // Tempo fee-token faucet (PathUSD) form
+  const [pathFaucetLoading, setPathFaucetLoading] = useState(false);
+  const [pathFaucetStatus, setPathFaucetStatus] = useState('');
+  const [pathFaucetTxHash, setPathFaucetTxHash] = useState<string | null>(null);
 
   useEffect(() => {
     const fromUrl = searchParams.get('deploymentId');
@@ -169,6 +174,78 @@ export default function Signatures() {
       setFaucetTx(`error:${e?.message ?? String(e)}`);
     }
   };
+
+  const requestPathUsdFaucet = async () => {
+    if (!walletClient?.account?.address) return;
+    if (chain?.id !== 42431) return;
+
+    setPathFaucetLoading(true);
+    setPathFaucetTxHash(null);
+    setPathFaucetStatus('Requesting PathUSD faucet...');
+
+    try {
+      const res = await fetch('/api/tempo/faucet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: walletClient.account.address }),
+      });
+
+      const text = await res.text();
+      let payload: any = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = null;
+      }
+
+      if (!res.ok) {
+        const msg = payload?.error || `Faucet request failed (${res.status})`;
+        throw new Error(msg);
+      }
+
+      // Try common tx-hash fields first.
+      const txHash: string | null =
+        payload?.txHash ??
+        payload?.transactionHash ??
+        payload?.hash ??
+        payload?.result?.txHash ??
+        payload?.result?.transactionHash ??
+        null;
+
+      // Fallback: find any 0x...64 hex in the response text.
+      const fallbackTxHash =
+        txHash ??
+        (typeof text === 'string' ? text.match(/0x[a-fA-F0-9]{64}/)?.[0] ?? null : null);
+
+      if (fallbackTxHash) {
+        setPathFaucetTxHash(fallbackTxHash);
+        setPathFaucetStatus('Faucet requested. Tx submitted.');
+      } else {
+        setPathFaucetStatus('Faucet requested. Check your wallet balance in a few moments.');
+      }
+    } catch (e: any) {
+      setPathFaucetStatus(`Faucet failed: ${e?.message ?? String(e)}`);
+    } finally {
+      setPathFaucetLoading(false);
+    }
+  };
+
+  const faucetRecipientOk = useMemo(() => {
+    const v = faucetTo?.trim() ?? '';
+    return v.startsWith('0x') && v.length === 42;
+  }, [faucetTo]);
+
+  const faucetAmountOk = useMemo(() => {
+    const v = faucetAmount?.trim() ?? '';
+    if (!v) return false;
+    try {
+      return BigInt(v) > 0n;
+    } catch {
+      return false;
+    }
+  }, [faucetAmount]);
+
+  const canMintPrincipalFaucet = faucetRecipientOk && faucetAmountOk;
 
   const signPay = async () => {
     if (!walletClient) return;
@@ -494,11 +571,11 @@ export default function Signatures() {
         <TabsContent value="faucet">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Social Token Faucet (testnet only)</CardTitle>
+              <CardTitle className="text-sm">EVVM Principal Faucet (testnet only)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-[10px] text-muted-foreground">
-                Mints {principalTokenLabel} to a recipient using the Core testnet faucet function
+                Mints {principalTokenLabel} to a recipient using the EVVM Core faucet function
                 <code className="ml-1 font-mono text-[10px]">addBalance(user, token, quantity)</code>. Anyone can call this on testnet.
               </p>
               <div>
@@ -521,9 +598,20 @@ export default function Signatures() {
                   className="mt-0.5 h-8 text-xs font-mono"
                 />
               </div>
+
+              {!canMintPrincipalFaucet && (
+                <p className="text-[10px] text-warning mt-1">
+                  Enter a recipient address and a positive amount (wei) to enable mint.
+                </p>
+              )}
               <Button
                 onClick={runFaucet}
-                disabled={signing || !selectedDeployment?.evvmCoreAddress || !walletClient}
+                disabled={
+                  signing ||
+                  !selectedDeployment?.evvmCoreAddress ||
+                  !walletClient ||
+                  !canMintPrincipalFaucet
+                }
                 className="w-full h-8 text-xs"
               >
                 <PenTool className="h-3 w-3" /> Mint {principalTokenLabel}
@@ -542,6 +630,42 @@ export default function Signatures() {
                       View faucet tx on explorer
                     </a>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">PathUSD Faucet (EVVM on Tempo)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-[10px] text-muted-foreground">
+                Request Tempo fee tokens (<b>PathUSD</b>) for EVVM deployments on <b>Tempo Moderato</b> (chain <b>42431</b>).
+              </p>
+
+              <Button
+                onClick={requestPathUsdFaucet}
+                disabled={
+                  pathFaucetLoading || !walletClient || chain?.id !== 42431 || !walletClient.account
+                }
+                className="w-full h-8 text-xs"
+              >
+                {pathFaucetLoading ? 'Requesting PathUSD...' : 'Request PathUSD'}
+              </Button>
+
+              {pathFaucetStatus && <p className="text-[10px] text-muted-foreground">{pathFaucetStatus}</p>}
+
+              {pathFaucetTxHash && (
+                <div className="mt-2 text-[10px]">
+                  <a
+                    href={getExplorerUrl(42431, pathFaucetTxHash, 'tx')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline font-mono"
+                  >
+                    View PathUSD faucet tx on explorer
+                  </a>
                 </div>
               )}
             </CardContent>

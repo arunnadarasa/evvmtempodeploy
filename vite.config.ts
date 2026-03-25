@@ -11,6 +11,13 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      '/api/tempo/faucet': {
+        target: 'https://docs.tempo.xyz',
+        changeOrigin: true,
+        rewrite: (path) => path.replace('/api/tempo/faucet', '/api/faucet'),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

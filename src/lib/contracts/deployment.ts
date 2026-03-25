@@ -1,5 +1,5 @@
 import { type WalletClient, type PublicClient, type Hash, type Address, createPublicClient, http } from 'viem';
-import { baseSepolia, sepolia } from 'wagmi/chains';
+import { sepolia } from 'wagmi/chains';
 import {
   StakingABI,
   NameServiceABI,
@@ -20,6 +20,8 @@ import {
 const REGISTRY_EVM_SEPOLIA_ADDRESS =
   '0x389dC8fb09211bbDA841D59f4a51160dA2377832' as Address;
 
+const TEMPO_MODERATO_CHAIN_ID = 42431 as const;
+
 const RegistryEvvmABI = [
   {
     type: 'function',
@@ -39,6 +41,8 @@ export type DeploymentStage =
   | 'deploying-core'
   | 'deploying-nameservice'
   | 'deploying-estimator'
+  | 'initializing-staking'
+  | 'initializing-core'
   | 'deploying-treasury'
   | 'deploying-p2pswap'
   | 'deployment-complete'
@@ -124,6 +128,32 @@ const TreasuryABI = [
   },
 ] as const;
 
+const StakingInitializeSystemContractsABI = [
+  {
+    type: 'function',
+    name: 'initializeSystemContracts',
+    inputs: [
+      { name: '_estimator', type: 'address', internalType: 'address' },
+      { name: '_core', type: 'address', internalType: 'address' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+] as const;
+
+const CoreInitializeSystemContractsABI = [
+  {
+    type: 'function',
+    name: 'initializeSystemContracts',
+    inputs: [
+      { name: '_nameServiceAddress', type: 'address', internalType: 'address' },
+      { name: '_treasuryAddress', type: 'address', internalType: 'address' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+] as const;
+
 async function deployContractWithRetry(
   walletClient: WalletClient,
   publicClient: PublicClient,
@@ -153,17 +183,22 @@ async function deployContractWithRetry(
         throw new Error('No contract address in receipt');
       }
 
-      // Verify bytecode exists (some RPCs lag right after mining).
-      let code: `0x${string}` | undefined;
-      for (let i = 0; i < 8; i++) {
-        // Some RPC providers reject eth_getCode(address, blockNumber) as "invalid params".
-        // We poll "latest" instead to confirm the contract shows up.
-        code = await publicClient.getCode({ address: receipt.contractAddress });
-        if (code && code !== '0x') break;
-        await new Promise((r) => setTimeout(r, 500 * (i + 1)));
-      }
-      if (!code || code === '0x') {
-        throw new Error('Contract bytecode verification failed (RPC may be lagging)');
+      // Some Tempo RPCs may return empty `eth_getCode` even when txs succeeded.
+      // Tempo Moderato: prioritize tx receipt success over eth_getCode verification.
+      const shouldVerifyBytecode = walletClient.chain?.id !== TEMPO_MODERATO_CHAIN_ID;
+      if (shouldVerifyBytecode) {
+        // Verify bytecode exists (some RPCs lag right after mining).
+        let code: `0x${string}` | undefined;
+        for (let i = 0; i < 8; i++) {
+          // Some RPC providers reject eth_getCode(address, blockNumber) as "invalid params".
+          // We poll "latest" instead to confirm the contract shows up.
+          code = await publicClient.getCode({ address: receipt.contractAddress });
+          if (code && code !== '0x') break;
+          await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+        }
+        if (!code || code === '0x') {
+          throw new Error('Contract bytecode verification failed (RPC may be lagging)');
+        }
       }
 
       return { address: receipt.contractAddress, txHash: hash };
@@ -201,7 +236,7 @@ export async function deployEVVMContracts(
   onProgress: (progress: DeploymentProgress) => void
 ): Promise<ContractAddresses> {
   const addresses: ContractAddresses = {};
-  const totalSteps = 7;
+  const totalSteps = 9;
 
   // Step 1: Deploy Staking
   onProgress({ stage: 'deploying-staking', message: 'Deploying Staking contract...', step: 1, totalSteps });
@@ -220,7 +255,8 @@ export async function deployEVVMContracts(
     EvvmID: 0n,
     principalTokenName: config.principalTokenName,
     principalTokenSymbol: config.principalTokenSymbol,
-    principalTokenAddress: '0x0000000000000000000000000000000000000000' as Address,
+    // Matches Tempo's BaseInputs.sol placeholder (0x...01).
+    principalTokenAddress: '0x0000000000000000000000000000000000000001' as Address,
     totalSupply: config.totalSupply,
     eraTokens: config.eraTokens,
     reward: config.rewardPerOperation,
@@ -258,49 +294,93 @@ export async function deployEVVMContracts(
   addresses.evvmCore = core.address;
   onProgress({ stage: 'deploying-core', message: 'EVVM Core deployed', txHash: core.txHash, step: 2, totalSteps });
 
-  // Step 3: Deploy NameService
-  onProgress({ stage: 'deploying-nameservice', message: 'Deploying NameService contract...', step: 3, totalSteps });
-  const nameService = await deployContractWithRetry(walletClient, publicClient, {
-    abi: NameServiceABI,
-    bytecode: NAME_SERVICE_BYTECODE,
-    args: [addresses.evvmCore, config.adminAddress],
-  });
-  addresses.nameService = nameService.address;
-  onProgress({ stage: 'deploying-nameservice', message: 'NameService deployed', txHash: nameService.txHash, step: 3, totalSteps });
-
-  // Step 4: Deploy Estimator
-  onProgress({ stage: 'deploying-estimator', message: 'Deploying Estimator contract...', step: 4, totalSteps });
+  // Step 3: Deploy Estimator
+  onProgress({ stage: 'deploying-estimator', message: 'Deploying Estimator contract...', step: 3, totalSteps });
   const estimator = await deployContractWithRetry(walletClient, publicClient, {
     abi: EstimatorABI,
     bytecode: ESTIMATOR_BYTECODE,
     args: [config.activatorAddress, addresses.evvmCore, addresses.staking, config.adminAddress],
   });
   addresses.estimator = estimator.address;
-  onProgress({ stage: 'deploying-estimator', message: 'Estimator deployed', txHash: estimator.txHash, step: 4, totalSteps });
+  onProgress({ stage: 'deploying-estimator', message: 'Estimator deployed', txHash: estimator.txHash, step: 3, totalSteps });
 
-  // Step 5: Deploy Treasury
-  onProgress({ stage: 'deploying-treasury', message: 'Deploying Treasury contract...', step: 5, totalSteps });
+  // Step 4: Deploy NameService
+  onProgress({ stage: 'deploying-nameservice', message: 'Deploying NameService contract...', step: 4, totalSteps });
+  const nameService = await deployContractWithRetry(walletClient, publicClient, {
+    abi: NameServiceABI,
+    bytecode: NAME_SERVICE_BYTECODE,
+    args: [addresses.evvmCore, config.adminAddress],
+  });
+  addresses.nameService = nameService.address;
+  onProgress({ stage: 'deploying-nameservice', message: 'NameService deployed', txHash: nameService.txHash, step: 4, totalSteps });
+
+  // Step 5: staking.initializeSystemContracts(estimator, core)
+  onProgress({ stage: 'initializing-staking', message: 'Initializing Staking system contracts...', step: 5, totalSteps });
+  const initStakingTxHash = await walletClient.writeContract({
+    address: addresses.staking!,
+    abi: StakingInitializeSystemContractsABI,
+    functionName: 'initializeSystemContracts',
+    args: [addresses.estimator!, addresses.evvmCore!],
+    account: walletClient.account!,
+    chain: walletClient.chain,
+  });
+  const initStakingReceipt = await publicClient.waitForTransactionReceipt({ hash: initStakingTxHash, timeout: 120_000 });
+  if (initStakingReceipt.status === 'reverted') {
+    throw new Error('Staking initializeSystemContracts transaction reverted');
+  }
+  onProgress({
+    stage: 'initializing-staking',
+    message: 'Staking initialized',
+    txHash: initStakingTxHash,
+    step: 5,
+    totalSteps,
+  });
+
+  // Step 6: Deploy Treasury
+  onProgress({ stage: 'deploying-treasury', message: 'Deploying Treasury contract...', step: 6, totalSteps });
   const treasury = await deployContractWithRetry(walletClient, publicClient, {
     abi: TreasuryABI,
     bytecode: TREASURY_BYTECODE,
     args: [addresses.evvmCore],
   });
   addresses.treasury = treasury.address;
-  onProgress({ stage: 'deploying-treasury', message: 'Treasury deployed', txHash: treasury.txHash, step: 5, totalSteps });
+  onProgress({ stage: 'deploying-treasury', message: 'Treasury deployed', txHash: treasury.txHash, step: 6, totalSteps });
 
-  // Step 6: Deploy P2PSwap
-  onProgress({ stage: 'deploying-p2pswap', message: 'Deploying P2PSwap contract...', step: 6, totalSteps });
+  // Step 7: core.initializeSystemContracts(nameService, treasury)
+  onProgress({ stage: 'initializing-core', message: 'Initializing Core system contracts...', step: 7, totalSteps });
+  const initCoreTxHash = await walletClient.writeContract({
+    address: addresses.evvmCore!,
+    abi: CoreInitializeSystemContractsABI,
+    functionName: 'initializeSystemContracts',
+    args: [addresses.nameService!, addresses.treasury!],
+    account: walletClient.account!,
+    chain: walletClient.chain,
+  });
+  const initCoreReceipt = await publicClient.waitForTransactionReceipt({ hash: initCoreTxHash, timeout: 120_000 });
+  if (initCoreReceipt.status === 'reverted') {
+    throw new Error('Core initializeSystemContracts transaction reverted');
+  }
+  onProgress({
+    stage: 'initializing-core',
+    message: 'Core initialized',
+    txHash: initCoreTxHash,
+    step: 7,
+    totalSteps,
+  });
+
+  // Step 8: Deploy P2PSwap
+  onProgress({ stage: 'deploying-p2pswap', message: 'Deploying P2PSwap contract...', step: 8, totalSteps });
   const p2pSwap = await deployContractWithRetry(walletClient, publicClient, {
     abi: P2PSwapABI,
     bytecode: P2P_SWAP_BYTECODE,
     args: [addresses.evvmCore, addresses.staking, config.adminAddress],
   });
   addresses.p2pSwap = p2pSwap.address;
-  onProgress({ stage: 'deploying-p2pswap', message: 'P2PSwap deployed', txHash: p2pSwap.txHash, step: 6, totalSteps });
+  onProgress({ stage: 'deploying-p2pswap', message: 'P2PSwap deployed', txHash: p2pSwap.txHash, step: 8, totalSteps });
 
-  // Step 7: Register EVVM on Ethereum Sepolia Registry
-  const hostChainId = walletClient.chain?.id ?? baseSepolia.id;
-  onProgress({ stage: 'switching-to-sepolia', message: 'Switching to Ethereum Sepolia for registry registration...', step: 7, totalSteps });
+  // Step 9: Register EVVM on Ethereum Sepolia Registry
+  const hostChainId = walletClient.chain?.id ?? TEMPO_MODERATO_CHAIN_ID;
+  onProgress({ stage: 'switching-to-sepolia', message: 'Switching to Ethereum Sepolia for registry registration...', step: 9, totalSteps });
 
   await walletClient.switchChain?.({ id: sepolia.id });
 
@@ -309,7 +389,7 @@ export async function deployEVVMContracts(
     transport: http(),
   });
 
-  onProgress({ stage: 'registering', message: 'Registering EVVM instance on Sepolia registry...', step: 7, totalSteps });
+  onProgress({ stage: 'registering', message: 'Registering EVVM instance on Sepolia registry...', step: 9, totalSteps });
   const sim = await sepoliaPublicClient.simulateContract({
     address: REGISTRY_EVM_SEPOLIA_ADDRESS,
     abi: RegistryEvvmABI,
@@ -338,14 +418,14 @@ export async function deployEVVMContracts(
     stage: 'registering',
     message: `EVVM registered on Sepolia (ID: ${evvmId.toString()})`,
     txHash: regTxHash,
-    step: 7,
+    step: 9,
     totalSteps,
   });
 
-  onProgress({ stage: 'switching-back', message: 'Switching back to Base Sepolia...', step: 7, totalSteps });
-  await walletClient.switchChain?.({ id: baseSepolia.id });
+  onProgress({ stage: 'switching-back', message: 'Switching back to Tempo Moderato...', step: 9, totalSteps });
+  await walletClient.switchChain?.({ id: TEMPO_MODERATO_CHAIN_ID });
 
-  onProgress({ stage: 'deployment-complete', message: 'All contracts deployed and registered!', step: 7, totalSteps });
+  onProgress({ stage: 'deployment-complete', message: 'All contracts deployed and registered!', step: 9, totalSteps });
 
   return addresses;
 }

@@ -7,6 +7,7 @@ interface NetworkBadgeProps {
 
 const chainMeta: Record<number, { name: string; color: string }> = {
   84532: { name: 'Base Sepolia', color: 'bg-primary/20 text-primary border-primary/30' },
+  42431: { name: 'Tempo Moderato', color: 'bg-primary/20 text-primary border-primary/30' },
   11155111: { name: 'Sepolia', color: 'bg-muted text-muted-foreground border-border' },
 };
 

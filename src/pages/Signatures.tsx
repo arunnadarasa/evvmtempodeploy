@@ -534,7 +534,7 @@ export default function Signatures() {
                     <span className="text-destructive">{faucetTx.slice(6)}</span>
                   ) : (
                     <a
-                      href={getExplorerUrl(selectedDeployment?.hostChainId ?? 84532, faucetTx, 'tx')}
+                      href={getExplorerUrl(selectedDeployment?.hostChainId ?? 42431, faucetTx, 'tx')}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline font-mono"

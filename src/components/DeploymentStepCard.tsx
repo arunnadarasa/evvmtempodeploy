@@ -11,6 +11,7 @@ interface DeploymentStepCardProps {
   txHash?: string;
   chainId: number;
   contractAddress?: string;
+  totalSteps: number;
 }
 
 export function DeploymentStepCard({
@@ -21,6 +22,7 @@ export function DeploymentStepCard({
   txHash,
   chainId,
   contractAddress,
+  totalSteps,
 }: DeploymentStepCardProps) {
   return (
     <div
@@ -35,7 +37,9 @@ export function DeploymentStepCard({
       <StatusCircle status={status} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono text-muted-foreground">{step}/7</span>
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {step}/{totalSteps}
+          </span>
           <h4 className="text-sm font-medium">{title}</h4>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>

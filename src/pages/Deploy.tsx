@@ -18,9 +18,11 @@ import { AlertTriangle, Rocket, Info } from 'lucide-react';
 const DEPLOYMENT_STEPS = [
   { title: 'Staking', description: 'Deploy Staking contract (no dependencies)' },
   { title: 'EVVM Core', description: 'Deploy Core contract (requires Staking)' },
-  { title: 'NameService', description: 'Deploy NameService (requires Core)' },
   { title: 'Estimator', description: 'Deploy Estimator (requires Core + Staking)' },
+  { title: 'NameService', description: 'Deploy NameService (requires Core)' },
+  { title: 'Initialize Staking', description: 'Wire Estimator + Core into Staking' },
   { title: 'Treasury', description: 'Deploy Treasury (requires Core)' },
+  { title: 'Initialize Core', description: 'Wire NameService + Treasury into Core' },
   { title: 'P2PSwap', description: 'Deploy P2PSwap (requires Core + Staking)' },
   { title: 'Register', description: 'Register EVVM on Ethereum Sepolia registry' },
 ];
@@ -90,7 +92,7 @@ export default function Deploy() {
         <Rocket className="h-8 w-8 text-primary mx-auto mb-4" />
         <h1 className="text-xl font-bold mb-2">Connect Wallet to Deploy</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          Connect your wallet to deploy EVVM contracts on Base Sepolia.
+          Connect your wallet to deploy EVVM contracts on Tempo Moderato (42431).
         </p>
         <ConnectButton />
       </main>
@@ -102,7 +104,7 @@ export default function Deploy() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-lg font-bold">Deploy EVVM Instance</h1>
-          <p className="text-xs text-muted-foreground">7-step deployment + registry wizard</p>
+          <p className="text-xs text-muted-foreground">9-step deployment + Sepolia registry</p>
         </div>
         {chain && <NetworkBadge chainId={chain.id} />}
       </div>
@@ -207,7 +209,8 @@ export default function Deploy() {
                 <div className="flex items-center gap-2 rounded-md bg-muted/50 border border-border p-2">
                   <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <p className="text-[10px] text-muted-foreground">
-                    Deployment requires ETH on Base Sepolia for gas fees. Each contract deployment is a separate transaction.
+                    Deployment fees are paid in PathUSD-style TIP-20 tokens on Tempo Moderato.
+                    Each contract deployment is a separate transaction.
                   </p>
                 </div>
 
@@ -217,7 +220,7 @@ export default function Deploy() {
                   className="w-full h-9 text-sm glow-primary"
                 >
                   <Rocket className="h-3.5 w-3.5" />
-                  Deploy 6 Contracts + Register
+                  Deploy EVVM Stack + Register
                 </Button>
               </CardContent>
             </Card>
@@ -240,8 +243,9 @@ export default function Deploy() {
                 title={step.title}
                 description={step.description}
                 status={getStepStatus(i)}
-                chainId={chain?.id || 84532}
+                chainId={chain?.id || 42431}
                 txHash={progress?.step === i + 1 ? progress.txHash : undefined}
+                totalSteps={DEPLOYMENT_STEPS.length}
               />
             ))}
 

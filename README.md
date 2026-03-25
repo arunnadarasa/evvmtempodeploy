@@ -1,11 +1,11 @@
-# EVVM Deployer
+# evvmtempodeploy
 
 Web app for deploying EVVM (Ethereum Virtual Machine) contracts, registering instances on the Sepolia registry, and managing deployment manifests and signatures.
 
 ## Features
 
-- **Deploy** – Full EVVM genesis deployment on Base Sepolia:
-  - Staking → EVVM Core (with CoreHashUtils) → Name Service → Estimator → Treasury → P2P Swap
+- **Deploy** – EVVM stack deployment on Tempo Moderato (chain 42431):
+  - Staking → EVVM Core (with CoreHashUtils) → Estimator → Name Service → Treasury → P2P Swap
   - Automatic registration of the EVVM instance on the Ethereum Sepolia registry
 - **Registry** – Register deployed EVVMs and track deployment records
 - **Signatures** – Workflow for EVVM-related signing using `@evvm/viem-signature-library`
@@ -63,5 +63,6 @@ This repo is set up to work with [Lovable](https://lovable.dev) when the project
 If Lovable was showing a different frontend, ensure the Lovable project is linked to **this** repository and that you’re on `main`. After pushing to `main`, Lovable will sync and preview this codebase.
 
 ## License
+MIT License
 
-Private.
+Copyright (c) 2026 Arun Nadarasa

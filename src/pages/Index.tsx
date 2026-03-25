@@ -11,7 +11,7 @@ const features = [
   {
     icon: Rocket,
     title: 'Deploy EVVM',
-    description: 'Deploy 5 smart contracts to create a complete virtual blockchain on Base Sepolia',
+    description: 'Deploy the EVVM stack on Tempo Moderato (42431) + register on Sepolia',
     to: '/deploy',
   },
   {
@@ -43,7 +43,7 @@ export default function Index() {
       >
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 mb-6">
           <Hexagon className="h-3.5 w-3.5 text-primary" />
-          <span className="text-xs font-medium text-primary">EVVM Ichiban • Base Sepolia</span>
+          <span className="text-xs font-medium text-primary">EVVM Ichiban • Tempo Moderato</span>
         </div>
 
         <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-4">
@@ -107,7 +107,7 @@ export default function Index() {
         <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
           <span>EVVM v3</span>
           <span className="h-3 w-px bg-border" />
-          <span>Base Sepolia</span>
+          <span>Tempo Moderato</span>
           <span className="h-3 w-px bg-border" />
           <span>EIP-191</span>
           <span className="h-3 w-px bg-border" />
